@@ -1,4 +1,9 @@
 # -*- coding:utf-8 -*-
+"""NR 调制映射工具。
+
+提供 38.211 5.1 对应的调制映射，包括 BPSK / QPSK / QAM。
+"""
+
 import numpy as np
 import math
 
@@ -9,12 +14,15 @@ def nrModulate(inbits, modtype):
     modtype = modtype.lower()
     assert modtype in ["pi/2-bpsk", "bpsk", "qpsk", "16qam", "64qam", "256qam", "1024qam"], "modulation type is incorrect"
 
-    b = inbits.astype('f') #convert to float32
+    # 统一转换为浮点，便于后续矢量化计算。
+    b = inbits.astype('f')
     N = b.size
     
     if modtype == "bpsk":
+        # BPSK 实部与虚部同相，保持单位平均功率。
         mod_data = ((1-2*b) + 1j*(1-2*b))/math.sqrt(2)         
     elif modtype == "pi/2-bpsk":
+        # pi/2-BPSK：奇偶符号交替旋转，实现更平滑包络。
         d1 = ((1-2*b) + 1j*(1-2*b))/math.sqrt(2)
         d2 = ((2*b-1) + 1j*(1-2*b))/math.sqrt(2)
         mod_data = d1
@@ -47,7 +55,7 @@ def nrModulate(inbits, modtype):
 def get_mod_list(modtype):
     """return all modulation and bit sequence for given modtype
     """
-    #get all modulation values for modtype
+    # 枚举给定调制方式下所有 bit 组合及对应星座点。
     Qm_list = {"pi/2-bpsk":1, "bpsk":1, "qpsk":2, "16qam":4, "64qam":6, "256qam":8, "1024qam":10}
     Qm = Qm_list[modtype]
     mod_array = np.zeros(2**Qm, 'c8')
@@ -74,14 +82,8 @@ def get_mod_list(modtype):
     return mod_array,inbits_array
 
 def get_oppisite_syms(inbits,modtype):
-    #find Symbo list with opposite bit value for each bit,
-    # for example, QAM16 symbol A with bits "1111" 
-    #the symbol with first bit=0 and closest to symbol A is symbol with bits 101
-    #the symbol with second bit=0 and closest to symbol A is symbol with its 1010
-    #the symbol with third bit=0 and closest to symbol A is symbol with bits 101
-    #the symbol with forth bit=0 and closest to symbol A is symbol with bits 110
-    #the slection is related to QAM constellation
-#["pi/2-bpsk", "bpsk", "qpsk", "16qam", "64qam", "256qam", "1024qam"]
+    # 为每一个 bit 位构造“翻转该位后的最近邻符号”，用于 LLR 近似计算。
+    # 具体邻点选择由各调制阶数的 Gray 映射与星座几何关系决定。
     if modtype == "pi/2-bpsk":
         opposite_syms = nrModulate(1-inbits, modtype)
     elif modtype == "bpsk":
