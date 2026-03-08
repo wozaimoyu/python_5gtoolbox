@@ -8,6 +8,7 @@ from scipy.signal import remez
 from py5gphy.common import nr_slot
 
 def Tx_low_phy(fd_slot, carrier_config, Dm=[]):
+    # 发送端低层处理：逐符号 IFFT、加 CP、可选定时误差和频偏相位补偿。
     """ handle Tx data IFFT, add CP and phase compensation
     could be used for gNodeB DL and UE UL transmission
     td_slot = DL_low_phy(fd_slot)
@@ -30,8 +31,7 @@ def Tx_low_phy(fd_slot, carrier_config, Dm=[]):
     ifftsize = nr_slot.get_FFT_IFFT_size(carrier_prb_size)
     sample_rate_in_hz = ifftsize * scs * 1000
 
-    #get cp table
-    #CP size
+    # 获取 4096 点参考下的 CP 表，并按实际 IFFT 大小缩放。
     ifft4096_scs30_cp_list = np.array([352] + [288]*13)
     ifft4096_scs15_cp_list = np.array([320] + [288]*6 + [320] + [288]*6 )
 
@@ -49,8 +49,7 @@ def Tx_low_phy(fd_slot, carrier_config, Dm=[]):
     for sym in range(14):
         fh_sym = fd_slot[:,sc_size*sym : sc_size*(sym+1)]
         
-        #phase shift with timing error
-        # phase = exp(j*2*i*k*fc*Dm)
+        # 按每个符号给定的 Dm 施加分数定时误差等效相位旋转。
         if len(Dm) > 0:
             fh_sym *= np.exp(1j*2*np.pi*np.arange(sc_size)*scs*1000*Dm[sym])
         
@@ -62,13 +61,12 @@ def Tx_low_phy(fd_slot, carrier_config, Dm=[]):
         #IFFT out power is N time lower than total IFFT input power, the ifftout need multuply by sqrt(ifftsize)
         ifftout = fft.ifft(fft.ifftshift(ifftin),axis=1)*np.sqrt(ifftsize)
 
-        #add cp
+        # 添加循环前缀（CP）。
         td_sym = np.zeros((num_of_ant,cptable[sym] + ifftsize),'c8')
         td_sym[:, 0:cptable[sym]] = ifftout[:, -cptable[sym]:]
         td_sym[:, cptable[sym]:] = ifftout
 
-        #phase compensation for each symbol in one slot assuming tu_start start from 0
-        #phase compemsation for each slot shall be done in other place
+        # 按中心频点进行符号级相位补偿；跨 slot 的补偿在外层处理。
         if central_freq_in_hz:
             #phase compensation only when central_freq_in_hz nonzero
             delta = central_freq_in_hz / sample_rate_in_hz

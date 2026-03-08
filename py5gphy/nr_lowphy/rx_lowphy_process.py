@@ -9,13 +9,14 @@ import json
 from py5gphy.common import nr_slot
 
 def waveform_rx_processing(rx_waveform, carrier_config,sample_rate_in_hz):
+    # 接收端入口：先滤波降采样，再按 slot 执行 FFT 还原频域栅格。
     """ Rx waveform processing,
     return freq domain IQ data
     """
     #FIR filter and downsample
     td_waveform = channel_filter(rx_waveform, carrier_config,sample_rate_in_hz)
 
-    #get number of slot
+    # 按 14 个符号估算每个 slot 样点数并切片。
     scs = carrier_config["scs"]
     BW = carrier_config["BW"]
     carrier_prb_size = nr_slot.get_carrier_prb_size(scs, BW)
@@ -33,6 +34,7 @@ def waveform_rx_processing(rx_waveform, carrier_config,sample_rate_in_hz):
     return td_waveform,fd_waveform
 
 def Rx_low_phy(td_slot, carrier_config):
+    # 接收端低层处理：相位校正、半 CP 对齐取样、FFT 与频域裁剪。
     """ handle TX data processing, including
     phase correction, half-CP removal, FFT and timing correction
     1. based on 38.2115.4, each symbolk need phase compensation, receiving side need phase correction
@@ -69,14 +71,14 @@ def Rx_low_phy(td_slot, carrier_config):
     cptable = cptable.astype(int)
     half_short_cp_size = cptable[1] // 2
     
-    #phase compensation vector to compensate half_short_cp_size timing advance
+    # 预计算相位向量，补偿半 CP 对齐引入的等效时移。
     phase_vec = np.exp(1j * 2 * np.pi * half_short_cp_size / fftsize * np.arange(fftsize))
 
     fd_slot = np.zeros((Nr,carrier_prb_size*12*14), 'c8')
 
     td_offset = 0
     for sym in range(14):
-        # phase correction
+        # 每个符号做频偏相关相位校正。
         td_sym = td_slot[:, td_offset : td_offset+cptable[sym]+fftsize]
         if central_freq_in_hz:
             #phase correction only when central_freq_in_hz nonzero
@@ -84,7 +86,7 @@ def Rx_low_phy(td_slot, carrier_config):
             td_sym = td_sym * np.exp(1j * 2 * np.pi * delta * (td_offset + cptable[sym]))
         
         td_offset += cptable[sym]+fftsize
-        #choose last 1/2*short-CP length of CP and first (fftsize - 1/2*short-CP length) data for FFT
+        # 采用“半 CP + 有效符号”窗口做 FFT，可减小符号间干扰影响。
         sel_td_sym = td_sym[:,cptable[sym]-half_short_cp_size : cptable[sym]-half_short_cp_size+fftsize]
         #fftshift is to move zero frequency data to the center of the array
         #FFT out power is N time higher than total FFT input power, the fftout need divide by sqrt(ifftsize)
